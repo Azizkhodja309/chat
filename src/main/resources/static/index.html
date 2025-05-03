@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Chat</title>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <style>
+        /* CSS styllari */
+    </style>
+</head>
+<body>
+<div id="login-container">
+    <input type="text" id="username" placeholder="Username">
+    <button onclick="connect()">Login</button>
+</div>
+
+<div id="chat-container" style="display: none;">
+    <div id="message-area"></div>
+    <div id="typing-status"></div>
+    <input type="text" id="message-input" placeholder="Type a message...">
+    <button onclick="sendMessage()">Send</button>
+</div>
+
+<script>
+    let stompClient = null;
+    let username = null;
+
+    function connect() {
+        username = document.getElementById('username').value.trim();
+        if(username) {
+            const socket = new SockJS('/ws-chat');
+            stompClient = Stomp.over(socket);
+
+            stompClient.connect({}, function(frame) {
+                document.getElementById('login-container').style.display = 'none';
+                document.getElementById('chat-container').style.display = 'block';
+
+                // Xabarlarni qabul qilish
+                stompClient.subscribe('/topic/public', function(message) {
+                    const chatMessage = JSON.parse(message.body);
+
+                    if(chatMessage.type === 'JOIN') {
+                        showMessage(chatMessage.sender + ' joined the chat!');
+                    } else if(chatMessage.type === 'LEAVE') {
+                        showMessage(chatMessage.sender + ' left the chat!');
+                    } else if(chatMessage.type === 'TYPING') {
+                        document.getElementById('typing-status').innerHTML =
+                            chatMessage.sender + ' is typing...';
+                        setTimeout(() => {
+                            document.getElementById('typing-status').innerHTML = '';
+                        }, 3000);
+                    } else {
+                        showMessage(chatMessage.sender + ': ' + chatMessage.content);
+                    }
+                });
+
+                // Foydalanuvchini qo'shish
+                const chatMessage = {
+                    sender: username,
+                    type: 'JOIN',
+                    content: null
+                };
+                stompClient.send("/app/chat.addUser", {}, JSON.stringify(chatMessage));
+            });
+        }
+    }
+
+    function sendMessage() {
+        const messageInput = document.getElementById('message-input');
+        const messageContent = messageInput.value.trim();
+
+        if(messageContent && stompClient) {
+            const chatMessage = {
+                sender: username,
+                type: 'CHAT',
+                content: messageContent
+            };
+            stompClient.send("/app/chat.sendMessage", {}, JSON.stringify(chatMessage));
+            messageInput.value = '';
+        }
+    }
+
+    function showMessage(message) {
+        const messageArea = document.getElementById('message-area');
+        const messageElement = document.createElement('div');
+        messageElement.textContent = message;
+        messageArea.appendChild(messageElement);
+        messageArea.scrollTop = messageArea.scrollHeight;
+    }
+
+    // Yozayotganini bildirish
+    document.getElementById('message-input').addEventListener('keypress', function() {
+        if(stompClient) {
+            const chatMessage = {
+                sender: username,
+                type: 'TYPING',
+                content: null
+            };
+            stompClient.send("/app/chat.typing", {}, JSON.stringify(chatMessage));
+        }
+    });
+</script>
+</body>
+</html>
